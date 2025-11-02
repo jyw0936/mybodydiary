@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>내몸일기 v2.0 완전판</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#1a1a1a;color:#fff}
+.app{max-width:480px;margin:0 auto;min-height:100vh}
+.page{display:none}
+.page.active{display:block}
+.mint-btn{background:#00d9c0;color:#000;font-weight:700;padding:12px 24px;border-radius:12px;border:none;cursor:pointer}
+.dark-card{background:#2a2a2a;border-radius:16px;padding:20px;margin:10px 0}
+.nav{position:fixed;bottom:0;left:0;right:0;background:#1f1f1f;border-top:1px solid#333;max-width:480px;margin:0 auto}
+.nav button{flex:1;padding:12px;background:none;border:none;color:#888;cursor:pointer}
+.nav button.active{color:#00d9c0}
+input,select,textarea{background:#2a2a2a;border:1px solid#3a3a3a;color:#fff;padding:12px;border-radius:8px;width:100%;margin:8px 0}
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;background:#2a2a2a}
+.cal-day.recorded{background:#00d9c0;color:#000}
+.cal-day.today{border:2px solid#00d9c0}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<script>
+// 데이터 구조
+let DB={
+  records:[],
+  profile:{name:'사용자',age:30,gender:'',height:170,weight:65},
+  posts:[],
+  challenges:{water:0,caffeine:0,walk:0}
+};
+
+// RULE 데이터 (확장)
+const RULES=[
+  {c:"변비",s:["프로바이오틱스","프리바이오틱스"],f:["귀리","요거트","블루베리"],e:"스트레칭 15분"},
+  {c:"피로",s:["비타민B복합체","코엔자임Q10"],f:["시금치","견과류","연어"],e:"걷기 20분"},
+  {c:"불면증",s:["멜라토닌","마그네슘"],f:["바나나","우유","호두"],e:"요가 30분"},
+  {c:"두통",s:["마그네슘","비타민B2"],f:["물","시금치"],e:"스트레칭 10분"},
+  {c:"스트레스",s:["마그네슘","테아닌"],f:["바나나","아몬드"],e:"요가 20분"}
+];
+
+const SYMPTOMS=["변비","피로","불면증","두통","스트레스","소화불량","근육통","관절통"];
+
+// 로컬 스토리지
+function load(){const d=localStorage.getItem('mybodydata');if(d)DB=JSON.parse(d)}
+function save(){localStorage.setItem('mybodydata',JSON.stringify(DB))}
+
+load();
+
+// 페이지 렌더링
+function render(page){
+  const app=document.getElementById('app');
+  
+  if(page==='home'){
+    const total=DB.records.length;
+    const lastRec=DB.records[DB.records.length-1];
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <h1 class="text-3xl font-bold mb-2">내몸일기 v2.0</h1>
+        <p class="text-gray-400 mb-6">안녕하세요, ${DB.profile.name}님!</p>
+        
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div class="dark-card">
+            <p class="text-sm text-gray-400">총 기록</p>
+            <p class="text-3xl font-bold text-green-400">${total}개</p>
+          </div>
+          <div class="dark-card">
+            <p class="text-sm text-gray-400">연속 기록</p>
+            <p class="text-3xl font-bold text-green-400">${Math.min(total,7)}일</p>
+          </div>
+        </div>
+        
+        <button onclick="render('record')" class="mint-btn w-full text-xl py-6 mb-4">
+          📝 오늘 기록하기
+        </button>
+        
+        <div class="dark-card">
+          <h3 class="font-bold mb-2">최근 기록</h3>
+          <p class="text-sm text-gray-400">${lastRec?`수면: ${lastRec.sleep}h, 증상: ${lastRec.symptom||'없음'}`:'아직 기록이 없습니다'}</p>
+        </div>
+        
+        <div class="dark-card">
+          <h3 class="font-bold mb-2">오늘의 챌린지</h3>
+          <div class="space-y-2">
+            <div class="flex justify-between items-center p-2 bg-gray-800 rounded">
+              <span>💧 물 1.5L</span>
+              <button onclick="completeChallenge('water')" class="text-xs bg-green-500 px-3 py-1 rounded">${DB.challenges.water?'✓':'완료'}</button>
+            </div>
+            <div class="flex justify-between items-center p-2 bg-gray-800 rounded">
+              <span>☕ 카페인 2잔↓</span>
+              <button onclick="completeChallenge('caffeine')" class="text-xs bg-green-500 px-3 py-1 rounded">${DB.challenges.caffeine?'✓':'완료'}</button>
+            </div>
+            <div class="flex justify-between items-center p-2 bg-gray-800 rounded">
+              <span>🚶 20분 걷기</span>
+              <button onclick="completeChallenge('walk')" class="text-xs bg-green-500 px-3 py-1 rounded">${DB.challenges.walk?'✓':'완료'}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      ${navBar('home')}
+    `;
+  }
+  
+  else if(page==='record'){
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <button onclick="render('home')" class="mb-4 text-xl">← 뒤로</button>
+        <h2 class="text-2xl font-bold mb-6">오늘의 기록</h2>
+        
+        <label class="block mb-2 font-bold">💤 수면 시간</label>
+        <input type="number" id="sleep" placeholder="7" class="mb-4">
+        
+        <label class="block mb-2 font-bold">🏃 운동</label>
+        <select id="exercise" class="mb-4">
+          <option value="none">안 함</option>
+          <option value="walk">걷기</option>
+          <option value="run">달리기</option>
+          <option value="gym">헬스</option>
+          <option value="yoga">요가</option>
+        </select>
+        
+        <label class="block mb-2 font-bold">🏥 증상 선택</label>
+        <select id="symptom" class="mb-4">
+          <option value="">없음</option>
+          ${SYMPTOMS.map(s=>`<option value="${s}">${s}</option>`).join('')}
+        </select>
+        
+        <label class="block mb-2 font-bold">💊 영양제</label>
+        <input type="text" id="supplements" placeholder="비타민D, 오메가3" class="mb-4">
+        
+        <label class="block mb-2 font-bold">📝 메모</label>
+        <textarea id="note" rows="3" placeholder="오늘의 메모" class="mb-6"></textarea>
+        
+        <button onclick="saveRecord()" class="mint-btn w-full py-4 text-lg">
+          💾 저장하고 추천받기
+        </button>
+      </div>
+    `;
+  }
+  
+  else if(page==='calendar'){
+    let html='<div class="p-6 pb-24"><button onclick="render(\'home\')" class="mb-4 text-xl">← 뒤로</button><h2 class="text-2xl font-bold mb-6">캘린더</h2>';
+    
+    const today=new Date();
+    const month=today.getMonth();
+    const year=today.getFullYear();
+    const firstDay=new Date(year,month,1).getDay();
+    const daysInMonth=new Date(year,month+1,0).getDate();
+    
+    html+='<div class="dark-card"><div class="calendar mb-4">';
+    ['일','월','화','수','목','금','토'].forEach(d=>html+=`<div class="text-center text-xs text-gray-400">${d}</div>`);
+    
+    for(let i=0;i<firstDay;i++)html+='<div></div>';
+    for(let d=1;d<=daysInMonth;d++){
+      const dateStr=`${year}-${(month+1).toString().padStart(2,'0')}-${d.toString().padStart(2,'0')}`;
+      const hasRecord=DB.records.some(r=>r.date===dateStr);
+      const isToday=d===today.getDate();
+      html+=`<div class="cal-day ${hasRecord?'recorded':''} ${isToday?'today':''}">${d}</div>`;
+    }
+    html+='</div></div>';
+    
+    html+='<div class="dark-card"><h3 class="font-bold mb-4">이번 달 기록</h3>';
+    DB.records.slice(-10).reverse().forEach(r=>{
+      html+=`<div class="p-3 mb-2 bg-gray-800 rounded">
+        <p class="text-sm text-gray-400">${r.date}</p>
+        <p>수면: ${r.sleep}h | 증상: ${r.symptom||'없음'}</p>
+      </div>`;
+    });
+    html+='</div></div>'+navBar('calendar');
+    app.innerHTML=html;
+  }
+  
+  else if(page==='analysis'){
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <button onclick="render('home')" class="mb-4 text-xl">← 뒤로</button>
+        <h2 class="text-2xl font-bold mb-6">건강 분석</h2>
+        
+        <div class="dark-card mb-4">
+          <h3 class="font-bold mb-4">📈 수면 추이</h3>
+          <canvas id="sleepChart" height="200"></canvas>
+        </div>
+        
+        <div class="dark-card mb-4">
+          <h3 class="font-bold mb-4">📊 통계</h3>
+          <p class="text-sm mb-2">평균 수면: ${avgSleep()}시간</p>
+          <p class="text-sm mb-2">운동 일수: ${exerciseDays()}일</p>
+          <p class="text-sm">가장 많은 증상: ${topSymptom()}</p>
+        </div>
+        
+        <div class="dark-card">
+          <h3 class="font-bold mb-4">✨ 현재 추천</h3>
+          <div id="recommendations"></div>
+        </div>
+        
+        <button onclick="shareReport()" class="mint-btn w-full py-4 mt-4">
+          🔗 결과 공유하기
+        </button>
+      </div>
+      ${navBar('analysis')}
+    `;
+    setTimeout(()=>{
+      const ctx=document.getElementById('sleepChart');
+      if(ctx)new Chart(ctx,{
+        type:'line',
+        data:{
+          labels:DB.records.slice(-7).map(r=>r.date.slice(5)),
+          datasets:[{
+            label:'수면시간',
+            data:DB.records.slice(-7).map(r=>parseFloat(r.sleep)||0),
+            borderColor:'#00d9c0',
+            tension:0.4
+          }]
+        },
+        options:{plugins:{legend:{labels:{color:'#fff'}}},scales:{y:{ticks:{color:'#fff'}},x:{ticks:{color:'#fff'}}}}
+      });
+      showRecommendations();
+    },100);
+  }
+  
+  else if(page==='profile'){
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <button onclick="render('home')" class="mb-4 text-xl">← 뒤로</button>
+        <h2 class="text-2xl font-bold mb-6">프로필</h2>
+        
+        <div class="dark-card">
+          <label class="block mb-2">이름</label>
+          <input type="text" id="name" value="${DB.profile.name}" class="mb-4">
+          
+          <label class="block mb-2">나이</label>
+          <input type="number" id="age" value="${DB.profile.age||''}" class="mb-4">
+          
+          <label class="block mb-2">성별</label>
+          <select id="gender" class="mb-4">
+            <option value="" ${!DB.profile.gender?'selected':''}>선택</option>
+            <option value="male" ${DB.profile.gender==='male'?'selected':''}>남성</option>
+            <option value="female" ${DB.profile.gender==='female'?'selected':''}>여성</option>
+          </select>
+          
+          <label class="block mb-2">키 (cm)</label>
+          <input type="number" id="height" value="${DB.profile.height||''}" class="mb-4">
+          
+          <label class="block mb-2">몸무게 (kg)</label>
+          <input type="number" id="weight" value="${DB.profile.weight||''}" class="mb-4">
+          
+          <button onclick="calcBMI()" class="w-full bg-gray-700 py-3 rounded-lg mb-4">BMI 계산</button>
+          <div id="bmiResult" class="text-center p-4 bg-gray-800 rounded hidden"></div>
+        </div>
+        
+        <div class="dark-card">
+          <button onclick="requestNotif()" class="w-full bg-yellow-500 text-black py-3 rounded-lg font-bold">
+            🔔 알림 설정
+          </button>
+        </div>
+        
+        <button onclick="saveProfile()" class="mint-btn w-full py-4 mt-4">
+          💾 저장하기
+        </button>
+      </div>
+      ${navBar('profile')}
+    `;
+  }
+  
+  else if(page==='community'){
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <h2 class="text-2xl font-bold mb-6">커뮤니티</h2>
+        
+        <div class="dark-card mb-4">
+          <textarea id="newPost" rows="3" placeholder="건강 정보를 공유해보세요!" class="mb-2"></textarea>
+          <button onclick="addPost()" class="mint-btn w-full py-3">게시하기</button>
+        </div>
+        
+        <div id="postList">
+          ${DB.posts.map((p,i)=>`
+            <div class="dark-card">
+              <p class="mb-2">${p.text}</p>
+              <div class="flex gap-4 text-sm text-gray-400">
+                <button onclick="likePost(${i})" class="hover:text-red-400">❤️ ${p.likes||0}</button>
+                <span>💬 ${p.comments||0}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ${navBar('community')}
+    `;
+  }
+}
+
+function navBar(active){
+  return `<div class="nav"><div class="flex">
+    <button onclick="render('home')" class="${active==='home'?'active':''}">🏠<br><span class="text-xs">홈</span></button>
+    <button onclick="render('record')" class="${active==='record'?'active':''}">➕<br><span class="text-xs">기록</span></button>
+    <button onclick="render('calendar')" class="${active==='calendar'?'active':''}">📅<br><span class="text-xs">캘린더</span></button>
+    <button onclick="render('analysis')" class="${active==='analysis'?'active':''}">📊<br><span class="text-xs">분석</span></button>
+    <button onclick="render('profile')" class="${active==='profile'?'active':''}">👤<br><span class="text-xs">프로필</span></button>
+  </div></div>`;
+}
+
+function saveRecord(){
+  const rec={
+    date:new Date().toISOString().split('T')[0],
+    sleep:document.getElementById('sleep').value,
+    exercise:document.getElementById('exercise').value,
+    symptom:document.getElementById('symptom').value,
+    supplements:document.getElementById('supplements').value,
+    note:document.getElementById('note').value
+  };
+  DB.records.push(rec);
+  save();
+  alert('✅ 기록 완료! 추천을 확인하세요.');
+  render('home');
+}
+
+function saveProfile(){
+  DB.profile.name=document.getElementById('name').value;
+  DB.profile.age=document.getElementById('age').value;
+  DB.profile.gender=document.getElementById('gender').value;
+  DB.profile.height=document.getElementById('height').value;
+  DB.profile.weight=document.getElementById('weight').value;
+  save();
+  alert('✅ 프로필 저장 완료!');
+}
+
+function calcBMI(){
+  const h=parseFloat(DB.profile.height)/100;
+  const w=parseFloat(DB.profile.weight);
+  if(h&&w){
+    const bmi=(w/(h*h)).toFixed(1);
+    let cat='';
+    if(bmi<18.5)cat='저체중';
+    else if(bmi<23)cat='정상';
+    else if(bmi<25)cat='과체중';
+    else cat='비만';
+    document.getElementById('bmiResult').innerHTML=`<p class="text-3xl font-bold text-green-400">${bmi}</p><p class="text-sm text-gray-400">${cat}</p>`;
+    document.getElementById('bmiResult').classList.remove('hidden');
+  }
+}
+
+function completeChallenge(type){
+  DB.challenges[type]=1;
+  save();
+  render('home');
+}
+
+function avgSleep(){
+  if(DB.records.length===0)return 0;
+  const sum=DB.records.reduce((a,r)=>a+parseFloat(r.sleep||0),0);
+  return(sum/DB.records.length).toFixed(1);
+}
+
+function exerciseDays(){
+  return DB.records.filter(r=>r.exercise&&r.exercise!=='none').length;
+}
+
+function topSymptom(){
+  const counts={};
+  DB.records.forEach(r=>{if(r.symptom)counts[r.symptom]=(counts[r.symptom]||0)+1});
+  const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+  return top?top[0]:'없음';
+}
+
+function showRecommendations(){
+  const lastRec=DB.records[DB.records.length-1];
+  if(!lastRec||!lastRec.symptom){
+    document.getElementById('recommendations').innerHTML='<p class="text-gray-400">증상을 기록하면 추천을 받을 수 있습니다</p>';
+    return;
+  }
+  const rule=RULES.find(r=>r.c===lastRec.symptom);
+  if(rule){
+    document.getElementById('recommendations').innerHTML=`
+      <p class="mb-2"><strong>💊 영양제:</strong> ${rule.s.join(', ')}</p>
+      <p class="mb-2"><strong>🥗 음식:</strong> ${rule.f.join(', ')}</p>
+      <p><strong>🏃 운동:</strong> ${rule.e}</p>
+    `;
+  }
+}
+
+function addPost(){
+  const text=document.getElementById('newPost').value;
+  if(text){
+    DB.posts.unshift({text,likes:0,comments:0,date:new Date().toLocaleDateString()});
+    save();
+    render('community');
+  }
+}
+
+function likePost(i){
+  DB.posts[i].likes=(DB.posts[i].likes||0)+1;
+  save();
+  render('community');
+}
+
+function shareReport(){
+  if(navigator.share){
+    navigator.share({title:'내몸일기',text:`최근 7일 평균 수면: ${avgSleep()}시간`});
+  }else{
+    alert('공유 링크: '+window.location.href);
+  }
+}
+
+function requestNotif(){
+  if('Notification' in window){
+    Notification.requestPermission().then(p=>{
+      alert(p==='granted'?'✅ 알림이 허용되었습니다!':'❌ 알림이 거부되었습니다');
+    });
+  }else{
+    alert('이 브라우저는 알림을 지원하지 않습니다');
+  }
+}
+
+// 초기 렌더링
+render('home');
+</script>
+</body>
+</html>
