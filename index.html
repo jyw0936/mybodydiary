@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>내몸일기 v2.1</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#1a1a1a;color:#fff}
+.app{max-width:480px;margin:0 auto;min-height:100vh}
+.page{display:none}
+.page.active{display:block}
+.mint-btn{background:#00d9c0;color:#000;font-weight:700;padding:12px 24px;border-radius:12px;border:none;cursor:pointer}
+.dark-card{background:#2a2a2a;border-radius:16px;padding:20px;margin:10px 0}
+.nav{position:fixed;bottom:0;left:0;right:0;background:#1f1f1f;border-top:1px solid#333;max-width:480px;margin:0 auto}
+.nav button{flex:1;padding:12px;background:none;border:none;color:#888;cursor:pointer}
+.nav button.active{color:#00d9c0}
+input,select,textarea{background:#2a2a2a;border:1px solid#3a3a3a;color:#fff;padding:12px;border-radius:8px;width:100%;margin:8px 0}
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;background:#2a2a2a;font-size:14px}
+.cal-day.recorded{background:#00d9c0;color:#000;font-weight:bold}
+.cal-day.today{border:2px solid#00d9c0}
+.symptom-tag{display:inline-block;background:#3a3a3a;padding:8px 12px;border-radius:20px;margin:4px;cursor:pointer;border:2px solid transparent;transition:all 0.2s}
+.symptom-tag.selected{background:#00d9c0;color:#000;border-color:#00d9c0;font-weight:bold}
+.filter-btn{background:#3a3a3a;padding:8px 16px;border-radius:8px;border:none;color:#fff;cursor:pointer;margin:4px}
+.filter-btn.active{background:#00d9c0;color:#000;font-weight:bold}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<script>
+// 데이터 구조
+let DB={
+  records:[],
+  profile:{name:'사용자',age:30,gender:'',height:170,weight:65},
+  posts:[],
+  dateFilter:'1month'
+};
+
+// 확장된 RULE 데이터베이스
+const RULES=[
+  {c:"변비",s:["프로바이오틱스","프리바이오틱스","마그네슘"],f:["귀리","요거트","블루베리","사과"],h:["식후 20분 산책","충분한 수분 섭취"],e:"스트레칭 15분"},
+  {c:"피로",s:["비타민B복합체","코엔자임Q10","철분","인삼"],f:["시금치","견과류","연어","귀리"],h:["충분한 수면","규칙적인 식사"],e:"걷기 20분"},
+  {c:"불면증",s:["멜라토닌","마그네슘","테아닌","발레리안"],f:["바나나","우유","호두","체리"],h:["취침 1시간 전 스마트폰 금지","규칙적인 취침 시간"],e:"요가 30분"},
+  {c:"두통",s:["마그네슘","비타민B2","코엔자임Q10"],f:["물","시금치","아몬드"],h:["충분한 수분 섭취","규칙적인 식사","스트레스 관리"],e:"목/어깨 스트레칭 10분"},
+  {c:"스트레스",s:["마그네슘","테아닌","로디올라"],f:["바나나","아몬드","다크초콜릿"],h:["명상 10분","충분한 수면","호흡 운동"],e:"요가 20분"},
+  {c:"소화불량",s:["소화효소","프로바이오틱스","생강"],f:["양배추","생강차","바나나"],h:["천천히 먹기","식사 후 눕지 않기"],e:"식후 가벼운 산책 10분"},
+  {c:"근육통",s:["마그네슘","BCAA","오메가3"],f:["계란","닭가슴살","바나나"],h:["충분한 스트레칭","회복 시간"],e:"가벼운 스트레칭"},
+  {c:"관절통",s:["글루코사민","콘드로이친","오메가3"],f:["연어","체리","생강"],h:["체중 관리","관절 보호"],e:"수영"},
+  {c:"피부건조",s:["오메가3","비타민E","히알루론산"],f:["아보카도","견과류","연어"],h:["충분한 수분 섭취","보습제 사용"],e:"걷기 20분"},
+  {c:"집중력저하",s:["오메가3","은행잎추출물","비타민B"],f:["블루베리","호두","아보카도"],h:["충분한 수분 섭취","규칙적인 휴식"],e:"걷기 20분"}
+];
+
+const SYMPTOMS=["변비","피로","불면증","두통","스트레스","소화불량","근육통","관절통","피부건조","집중력저하"];
+
+// 로컬 스토리지
+function load(){const d=localStorage.getItem('mybodydata');if(d)DB=JSON.parse(d)}
+function save(){localStorage.setItem('mybodydata',JSON.stringify(DB))}
+
+load();
+
+// 날짜 필터 계산
+function getFilteredDates(){
+  const today=new Date();
+  const start=new Date();
+  
+  if(DB.dateFilter==='1month'){
+    start.setMonth(start.getMonth()-1);
+  }else if(DB.dateFilter==='3month'){
+    start.setMonth(start.getMonth()-3);
+  }else if(DB.dateFilter==='lastmonth'){
+    start.setMonth(start.getMonth()-1);
+    start.setDate(1);
+    today.setDate(0);
+  }
+  
+  return DB.records.filter(r=>{
+    const d=new Date(r.date);
+    return d>=start&&d<=today;
+  });
+}
+
+// 페이지 렌더링
+function render(page){
+  const app=document.getElementById('app');
+  
+  if(page==='home'){
+    const total=DB.records.length;
+    const lastRec=DB.records[DB.records.length-1];
+    const lastSymptoms=lastRec&&lastRec.symptoms?lastRec.symptoms:[];
+    
+    // 증상 기반 추천 생성
+    let recommendations={supplements:[],foods:[],habits:[],exercise:''};
+    if(lastSymptoms.length>0){
+      lastSymptoms.forEach(sym=>{
+        const rule=RULES.find(r=>r.c===sym);
+        if(rule){
+          recommendations.supplements.push(...rule.s);
+          recommendations.foods.push(...rule.f);
+          recommendations.habits.push(...rule.h);
+          if(!recommendations.exercise)recommendations.exercise=rule.e;
+        }
+      });
+      // 중복 제거
+      recommendations.supplements=[...new Set(recommendations.supplements)];
+      recommendations.foods=[...new Set(recommendations.foods)];
+      recommendations.habits=[...new Set(recommendations.habits)];
+    }
+    
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <h1 class="text-3xl font-bold mb-2">내몸일기</h1>
+        <p class="text-gray-400 mb-6">안녕하세요, ${DB.profile.name}님! 👋</p>
+        
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div class="dark-card">
+            <p class="text-sm text-gray-400">총 기록</p>
+            <p class="text-3xl font-bold text-green-400">${total}개</p>
+          </div>
+          <div class="dark-card">
+            <p class="text-sm text-gray-400">연속 기록</p>
+            <p class="text-3xl font-bold text-green-400">${Math.min(total,7)}일</p>
+          </div>
+        </div>
+        
+        <button onclick="render('record')" class="mint-btn w-full text-xl py-6 mb-4">
+          📝 오늘 기록하기
+        </button>
+        
+        ${lastRec?`
+        <div class="dark-card mb-4">
+          <h3 class="font-bold mb-2">📌 최근 기록</h3>
+          <p class="text-sm text-gray-400 mb-1">${lastRec.date}</p>
+          <p class="text-sm">수면: ${lastRec.sleep}h | 운동: ${lastRec.exercise||'없음'}</p>
+          ${lastSymptoms.length>0?`<p class="text-sm mt-1">증상: ${lastSymptoms.join(', ')}</p>`:''}
+        </div>
+        `:''}
+        
+        ${lastSymptoms.length>0?`
+        <div class="dark-card mb-4">
+          <h3 class="font-bold mb-3">💊 추천 영양제</h3>
+          <div class="flex flex-wrap gap-2">
+            ${recommendations.supplements.slice(0,4).map(s=>`
+              <button onclick="openNaverShopping('${s}')" class="bg-purple-900/40 px-3 py-2 rounded-lg text-sm border border-purple-700/50 hover:bg-purple-800/40">
+                ${s} 🔍
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        
+        <div class="dark-card mb-4">
+          <h3 class="font-bold mb-3">🥗 추천 음식</h3>
+          <div class="flex flex-wrap gap-2">
+            ${recommendations.foods.slice(0,4).map(f=>`
+              <span class="bg-green-900/40 px-3 py-2 rounded-lg text-sm border border-green-700/50">${f}</span>
+            `).join('')}
+          </div>
+        </div>
+        
+        <div class="dark-card mb-4">
+          <h3 class="font-bold mb-3">✅ 추천 습관</h3>
+          <div class="space-y-2">
+            ${recommendations.habits.slice(0,3).map(h=>`
+              <div class="flex items-start gap-2 p-2 bg-gray-800/50 rounded">
+                <span class="text-green-400">✓</span>
+                <span class="text-sm">${h}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        
+        <div class="dark-card">
+          <h3 class="font-bold mb-3">🏃 추천 운동</h3>
+          <div class="bg-blue-900/40 p-3 rounded-lg border border-blue-700/50">
+            <p class="text-sm">${recommendations.exercise}</p>
+          </div>
+        </div>
+        `:`
+        <div class="dark-card">
+          <h3 class="font-bold mb-2">💡 시작해보세요!</h3>
+          <p class="text-sm text-gray-400">증상을 기록하면 맞춤 추천을 받을 수 있습니다</p>
+        </div>
+        `}
+      </div>
+      ${navBar('home')}
+    `;
+  }
+  
+  else if(page==='record'){
+    const lastRec=DB.records[DB.records.length-1];
+    const selectedSymptoms=lastRec&&lastRec.symptoms?lastRec.symptoms:[];
+    
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <button onclick="render('home')" class="mb-4 text-xl">← 뒤로</button>
+        <h2 class="text-2xl font-bold mb-6">오늘의 기록</h2>
+        
+        <label class="block mb-2 font-bold">💤 수면 시간</label>
+        <input type="number" id="sleep" placeholder="7" class="mb-4" step="0.5">
+        
+        <label class="block mb-2 font-bold">🏃 운동</label>
+        <select id="exercise" class="mb-4">
+          <option value="none">안 함</option>
+          <option value="walk">걷기</option>
+          <option value="run">달리기</option>
+          <option value="gym">헬스</option>
+          <option value="yoga">요가</option>
+          <option value="swimming">수영</option>
+          <option value="cycling">자전거</option>
+        </select>
+        
+        <label class="block mb-2 font-bold">🍺 음주</label>
+        <select id="drinking" class="mb-4">
+          <option value="none">안 함</option>
+          <option value="week1">주 1회</option>
+          <option value="week2-3">주 2~3회</option>
+          <option value="week4+">주 4회 이상</option>
+        </select>
+        
+        <label class="block mb-2 font-bold">🚬 흡연</label>
+        <select id="smoking" class="mb-4">
+          <option value="no">X (안 함)</option>
+          <option value="yes">O (함)</option>
+        </select>
+        
+        <label class="block mb-2 font-bold">🏥 불편한 증상 선택 (여러 개 가능)</label>
+        <div class="mb-4 p-4 bg-gray-800/50 rounded-lg" id="symptomSelector">
+          ${SYMPTOMS.map(s=>`
+            <span class="symptom-tag ${selectedSymptoms.includes(s)?'selected':''}" onclick="toggleSymptom('${s}')">${s}</span>
+          `).join('')}
+        </div>
+        <div id="selectedSymptomsText" class="text-sm text-gray-400 mb-4"></div>
+        
+        <label class="block mb-2 font-bold">💊 영양제</label>
+        <input type="text" id="supplements" placeholder="비타민D, 오메가3" class="mb-4">
+        
+        <label class="block mb-2 font-bold">📝 메모</label>
+        <textarea id="note" rows="3" placeholder="오늘의 메모" class="mb-6"></textarea>
+        
+        <button onclick="saveRecord()" class="mint-btn w-full py-4 text-lg">
+          💾 저장하고 추천받기
+        </button>
+      </div>
+    `;
+    updateSelectedSymptoms();
+  }
+  
+  else if(page==='calendar'){
+    const filtered=getFilteredDates();
+    
+    let html=`
+      <div class="p-6 pb-24">
+        <button onclick="render('home')" class="mb-4 text-xl">← 뒤로</button>
+        <h2 class="text-2xl font-bold mb-4">캘린더</h2>
+        
+        <div class="mb-4 flex gap-2 flex-wrap">
+          <button class="filter-btn ${DB.dateFilter==='1month'?'active':''}" onclick="setDateFilter('1month')">1개월</button>
+          <button class="filter-btn ${DB.dateFilter==='3month'?'active':''}" onclick="setDateFilter('3month')">3개월</button>
+          <button class="filter-btn ${DB.dateFilter==='lastmonth'?'active':''}" onclick="setDateFilter('lastmonth')">지난달</button>
+          <button class="filter-btn" onclick="showDatePicker()">직접입력</button>
+        </div>
+    `;
+    
+    const today=new Date();
+    const month=today.getMonth();
+    const year=today.getFullYear();
+    const firstDay=new Date(year,month,1).getDay();
+    const daysInMonth=new Date(year,month+1,0).getDate();
+    
+    html+='<div class="dark-card"><div class="text-center mb-3 font-bold">'+year+'년 '+(month+1)+'월</div><div class="calendar mb-4">';
+    ['일','월','화','수','목','금','토'].forEach(d=>html+=`<div class="text-center text-xs text-gray-400">${d}</div>`);
+    
+    for(let i=0;i<firstDay;i++)html+='<div></div>';
+    for(let d=1;d<=daysInMonth;d++){
+      const dateStr=`${year}-${(month+1).toString().padStart(2,'0')}-${d.toString().padStart(2,'0')}`;
+      const hasRecord=DB.records.some(r=>r.date===dateStr);
+      const isToday=d===today.getDate();
+      html+=`<div class="cal-day ${hasRecord?'recorded':''} ${isToday?'today':''}" onclick="showDayDetail('${dateStr}')">${d}</div>`;
+    }
+    html+='</div></div>';
+    
+    html+='<div class="dark-card"><h3 class="font-bold mb-4">기록 목록 ('+filtered.length+'개)</h3>';
+    if(filtered.length===0){
+      html+='<p class="text-sm text-gray-400">선택한 기간에 기록이 없습니다</p>';
+    }else{
+      filtered.slice().reverse().forEach(r=>{
+        const symptoms=r.symptoms&&r.symptoms.length>0?r.symptoms.join(', '):'없음';
+        html+=`<div class="p-3 mb-2 bg-gray-800 rounded cursor-pointer" onclick="showDayDetail('${r.date}')">
+          <p class="text-sm text-gray-400">${r.date}</p>
+          <p class="text-sm">💤 ${r.sleep}h | 🏃 ${r.exercise||'없음'}</p>
+          <p class="text-sm text-gray-400">증상: ${symptoms}</p>
+        </div>`;
+      });
+    }
+    html+='</div></div>'+navBar('calendar');
+    app.innerHTML=html;
+  }
+  
+  else if(page==='analysis'){
+    const filtered=getFilteredDates();
+    
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <button onclick="render('home')" class="mb-4 text-xl">← 뒤로</button>
+        <h2 class="text-2xl font-bold mb-6">건강 분석</h2>
+        
+        <div class="dark-card mb-4">
+          <h3 class="font-bold mb-4">📈 수면 추이</h3>
+          <canvas id="sleepChart" height="200"></canvas>
+        </div>
+        
+        <div class="dark-card mb-4">
+          <h3 class="font-bold mb-4">📊 통계</h3>
+          <p class="text-sm mb-2">평균 수면: ${avgSleep()}시간</p>
+          <p class="text-sm mb-2">운동 일수: ${exerciseDays()}일</p>
+          <p class="text-sm">가장 많은 증상: ${topSymptom()}</p>
+        </div>
+        
+        <div class="dark-card mb-4">
+          <h3 class="font-bold mb-4">💊 추천 영양제 구매</h3>
+          <p class="text-sm text-gray-400 mb-3">분석 결과를 바탕으로 추천드립니다</p>
+          <div id="recommendedSupplements"></div>
+        </div>
+      </div>
+      ${navBar('analysis')}
+    `;
+    
+    setTimeout(()=>{
+      const ctx=document.getElementById('sleepChart');
+      if(ctx&&filtered.length>0){
+        new Chart(ctx,{
+          type:'line',
+          data:{
+            labels:filtered.slice(-14).map(r=>r.date.slice(5)),
+            datasets:[{
+              label:'수면시간',
+              data:filtered.slice(-14).map(r=>parseFloat(r.sleep)||0),
+              borderColor:'#00d9c0',
+              backgroundColor:'rgba(0,217,192,0.1)',
+              tension:0.4,
+              fill:true
+            }]
+          },
+          options:{
+            plugins:{legend:{labels:{color:'#fff'}}},
+            scales:{
+              y:{ticks:{color:'#fff'},grid:{color:'#333'}},
+              x:{ticks:{color:'#fff'},grid:{color:'#333'}}
+            }
+          }
+        });
+      }
+      showAnalysisRecommendations();
+    },100);
+  }
+  
+  else if(page==='profile'){
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <button onclick="render('home')" class="mb-4 text-xl">← 뒤로</button>
+        <h2 class="text-2xl font-bold mb-6">프로필</h2>
+        
+        <div class="dark-card">
+          <label class="block mb-2 font-bold">이름</label>
+          <input type="text" id="name" value="${DB.profile.name}" class="mb-4">
+          
+          <label class="block mb-2 font-bold">나이</label>
+          <input type="number" id="age" value="${DB.profile.age||''}" class="mb-4">
+          
+          <label class="block mb-2 font-bold">성별</label>
+          <select id="gender" class="mb-4">
+            <option value="" ${!DB.profile.gender?'selected':''}>선택</option>
+            <option value="male" ${DB.profile.gender==='male'?'selected':''}>남성</option>
+            <option value="female" ${DB.profile.gender==='female'?'selected':''}>여성</option>
+          </select>
+          
+          <label class="block mb-2 font-bold">키 (cm)</label>
+          <input type="number" id="height" value="${DB.profile.height||''}" class="mb-4">
+          
+          <label class="block mb-2 font-bold">몸무게 (kg)</label>
+          <input type="number" id="weight" value="${DB.profile.weight||''}" class="mb-4">
+          
+          <button onclick="calcBMI()" class="w-full bg-gray-700 py-3 rounded-lg mb-4">BMI 계산</button>
+          <div id="bmiResult" class="text-center p-4 bg-gray-800 rounded hidden"></div>
+        </div>
+        
+        <button onclick="saveProfile()" class="mint-btn w-full py-4 mt-4">
+          💾 저장하기
+        </button>
+      </div>
+      ${navBar('profile')}
+    `;
+  }
+  
+  else if(page==='community'){
+    app.innerHTML=`
+      <div class="p-6 pb-24">
+        <h2 class="text-2xl font-bold mb-6">커뮤니티</h2>
+        
+        <div class="dark-card mb-4">
+          <textarea id="newPost" rows="3" placeholder="건강 정보를 공유해보세요!" class="mb-2"></textarea>
+          <button onclick="addPost()" class="mint-btn w-full py-3">게시하기</button>
+        </div>
+        
+        <div id="postList">
+          ${DB.posts.map((p,i)=>`
+            <div class="dark-card">
+              <p class="mb-2">${p.text}</p>
+              <div class="flex gap-4 text-sm text-gray-400">
+                <button onclick="likePost(${i})" class="hover:text-red-400">❤️ ${p.likes||0}</button>
+                <span>💬 ${p.comments||0}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ${navBar('community')}
+    `;
+  }
+}
+
+function navBar(active){
+  return `<div class="nav"><div class="flex">
+    <button onclick="render('home')" class="${active==='home'?'active':''}">🏠<br><span class="text-xs">홈</span></button>
+    <button onclick="render('record')" class="${active==='record'?'active':''}">➕<br><span class="text-xs">기록</span></button>
+    <button onclick="render('calendar')" class="${active==='calendar'?'active':''}">📅<br><span class="text-xs">캘린더</span></button>
+    <button onclick="render('analysis')" class="${active==='analysis'?'active':''}">📊<br><span class="text-xs">분석</span></button>
+    <button onclick="render('profile')" class="${active==='profile'?'active':''}">👤<br><span class="text-xs">프로필</span></button>
+  </div></div>`;
+}
+
+let selectedSymptoms=[];
+
+function toggleSymptom(symptom){
+  const idx=selectedSymptoms.indexOf(symptom);
+  if(idx>-1){
+    selectedSymptoms.splice(idx,1);
+  }else{
+    selectedSymptoms.push(symptom);
+  }
+  updateSelectedSymptoms();
+}
+
+function updateSelectedSymptoms(){
+  const tags=document.querySelectorAll('.symptom-tag');
+  tags.forEach(tag=>{
+    const symptom=tag.textContent;
+    if(selectedSymptoms.includes(symptom)){
+      tag.classList.add('selected');
+    }else{
+      tag.classList.remove('selected');
+    }
+  });
+  
+  const text=document.getElementById('selectedSymptomsText');
+  if(text){
+    if(selectedSymptoms.length>0){
+      text.textContent='선택됨: '+selectedSymptoms.join(', ');
+      text.classList.remove('text-gray-400');
+      text.classList.add('text-green-400');
+    }else{
+      text.textContent='증상을 선택하세요';
+      text.classList.add('text-gray-400');
+      text.classList.remove('text-green-400');
+    }
+  }
+}
+
+function saveRecord(){
+  const rec={
+    date:new Date().toISOString().split('T')[0],
+    sleep:document.getElementById('sleep').value,
+    exercise:document.getElementById('exercise').value,
+    drinking:document.getElementById('drinking').value,
+    smoking:document.getElementById('smoking').value,
+    symptoms:[...selectedSymptoms],
+    supplements:document.getElementById('supplements').value,
+    note:document.getElementById('note').value
+  };
+  DB.records.push(rec);
+  save();
+  selectedSymptoms=[];
+  alert('✅ 기록 완료! 추천을 확인하세요.');
+  render('home');
+}
+
+function saveProfile(){
+  DB.profile.name=document.getElementById('name').value;
+  DB.profile.age=document.getElementById('age').value;
+  DB.profile.gender=document.getElementById('gender').value;
+  DB.profile.height=document.getElementById('height').value;
+  DB.profile.weight=document.getElementById('weight').value;
+  save();
+  alert('✅ 프로필 저장 완료!');
+}
+
+function calcBMI(){
+  const h=parseFloat(DB.profile.height)/100;
+  const w=parseFloat(DB.profile.weight);
+  if(h&&w){
+    const bmi=(w/(h*h)).toFixed(1);
+    let cat='';
+    if(bmi<18.5)cat='저체중';
+    else if(bmi<23)cat='정상';
+    else if(bmi<25)cat='과체중';
+    else cat='비만';
+    document.getElementById('bmiResult').innerHTML=`<p class="text-3xl font-bold text-green-400">${bmi}</p><p class="text-sm text-gray-400">${cat}</p>`;
+    document.getElementById('bmiResult').classList.remove('hidden');
+  }
+}
+
+function setDateFilter(filter){
+  DB.dateFilter=filter;
+  save();
+  render('calendar');
+}
+
+function showDatePicker(){
+  const start=prompt('시작 날짜 (YYYY-MM-DD):');
+  const end=prompt('종료 날짜 (YYYY-MM-DD):');
+  if(start&&end){
+    DB.dateFilter='custom';
+    DB.customStart=start;
+    DB.customEnd=end;
+    save();
+    render('calendar');
+  }
+}
+
+function showDayDetail(date){
+  const rec=DB.records.find(r=>r.date===date);
+  if(rec){
+    const symptoms=rec.symptoms&&rec.symptoms.length>0?rec.symptoms.join(', '):'없음';
+    alert(`📅 ${date}\n\n💤 수면: ${rec.sleep}h\n🏃 운동: ${rec.exercise||'없음'}\n🍺 음주: ${rec.drinking||'없음'}\n🚬 흡연: ${rec.smoking||'없음'}\n🏥 증상: ${symptoms}\n💊 영양제: ${rec.supplements||'없음'}\n📝 메모: ${rec.note||'없음'}`);
+  }
+}
+
+function avgSleep(){
+  if(DB.records.length===0)return 0;
+  const sum=DB.records.reduce((a,r)=>a+parseFloat(r.sleep||0),0);
+  return(sum/DB.records.length).toFixed(1);
+}
+
+function exerciseDays(){
+  return DB.records.filter(r=>r.exercise&&r.exercise!=='none').length;
+}
+
+function topSymptom(){
+  const counts={};
+  DB.records.forEach(r=>{
+    if(r.symptoms&&r.symptoms.length>0){
+      r.symptoms.forEach(s=>counts[s]=(counts[s]||0)+1);
+    }
+  });
+  const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+  return top?top[0]:'없음';
+}
+
+function showAnalysisRecommendations(){
+  const topSym=topSymptom();
+  if(topSym==='없음'){
+    document.getElementById('recommendedSupplements').innerHTML='<p class="text-sm text-gray-400">기록을 추가하면 추천을 받을 수 있습니다</p>';
+    return;
+  }
+  
+  const rule=RULES.find(r=>r.c===topSym);
+  if(rule){
+    const html=rule.s.slice(0,4).map(s=>`
+      <button onclick="openNaverShopping('${s}')" class="w-full mb-2 p-3 bg-purple-900/40 rounded-lg border border-purple-700/50 hover:bg-purple-800/40 text-left flex justify-between items-center">
+        <span>${s}</span>
+        <span class="text-sm">검색 →</span>
+      </button>
+    `).join('');
+    document.getElementById('recommendedSupplements').innerHTML=html;
+  }
+}
+
+function openNaverShopping(keyword){
+  window.open(`https://search.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}`,'_blank');
+}
+
+function addPost(){
+  const text=document.getElementById('newPost').value;
+  if(text){
+    DB.posts.unshift({text,likes:0,comments:0,date:new Date().toLocaleDateString()});
+    save();
+    render('community');
+  }
+}
+
+function likePost(i){
+  DB.posts[i].likes=(DB.posts[i].likes||0)+1;
+  save();
+  render('community');
+}
+
+// 초기 렌더링
+render('home');
+</script>
+</body>
+</html>
