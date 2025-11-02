@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>내몸일기 - RULE 기반 건강 추천</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a1a; color: #fff; }
+        .app-container { max-width: 480px; margin: 0 auto; background: #1a1a1a; min-height: 100vh; }
+        .page { display: none; min-height: 100vh; }
+        .page.active { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
+        .float-animation { animation: float 3s ease-in-out infinite; }
+        .mint-btn { background: #00d9c0; color: #000; font-weight: 700; }
+        .mint-btn:hover { background: #00c4ad; }
+        .dark-card { background: #2a2a2a; border-radius: 16px; }
+        .bottom-nav { background: #1f1f1f; border-top: 1px solid #333; }
+        .tab-btn { padding: 12px 24px; color: #888; border-bottom: 2px solid transparent; }
+        .tab-btn.active { color: #00d9c0; border-bottom-color: #00d9c0; }
+        .progress-bar { background: #3a3a3a; border-radius: 10px; height: 8px; }
+        .progress-fill { background: linear-gradient(90deg, #00d9c0, #00ffd5); height: 100%; transition: width 0.3s; }
+        .symptom-btn { background: #3a3a3a; border: 2px solid transparent; transition: all 0.2s; }
+        .symptom-btn.selected { background: #00d9c0; color: #000; border-color: #00d9c0; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        
+        <!-- 스플래시 -->
+        <div id="splashPage" class="page active">
+            <div class="min-h-screen bg-black flex items-center justify-center">
+                <div class="float-animation text-center">
+                    <h1 class="text-6xl font-bold" style="color: #00d9c0;">내몸일기</h1>
+                    <p class="text-gray-400 mt-4">AI 없이 RULE 기반 추천</p>
+                    <p class="text-gray-500 text-sm mt-2">비용 $0 🎯</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 로그인 -->
+        <div id="loginPage" class="page">
+            <div class="min-h-screen bg-gradient-to-b from-gray-900 to-black p-6 flex flex-col justify-between">
+                <div class="flex-1 flex items-center">
+                    <div class="w-full">
+                        <h2 class="text-3xl font-bold text-white mb-2">건강 고민 끝,</h2>
+                        <h2 class="text-3xl font-bold text-white mb-2">내몸일기와 오신 것을</h2>
+                        <h2 class="text-3xl font-bold text-white mb-6">환영합니다!</h2>
+                        <p class="text-gray-400 text-sm">RULE 기반 맞춤 추천 (AI 비용 $0)</p>
+                    </div>
+                </div>
+                
+                <div class="space-y-3 mb-8">
+                    <button onclick="login('카카오')" class="w-full mint-btn py-4 rounded-xl text-lg">
+                        💬 카카오로 계속하기
+                    </button>
+                    <button onclick="login('Apple')" class="w-full bg-white text-black py-4 rounded-xl font-bold text-lg">
+                        🍎 Apple로 계속하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 홈 화면 -->
+        <div id="homePage" class="page">
+            <div class="min-h-screen bg-black pb-24">
+                <div class="p-6 pb-4 bg-gradient-to-br from-purple-900/20 to-blue-900/20">
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <h1 class="text-2xl font-bold" id="welcomeMsg">안녕하세요, 철수님! 👋</h1>
+                            <p class="text-gray-400 text-sm mt-1">오늘 하루도 기록해볼까요?</p>
+                        </div>
+                        <div class="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-500 rounded-full"></div>
+                    </div>
+                </div>
+
+                <div class="px-6 space-y-4 -mt-4">
+                    <button onclick="showPage('recordPage')" class="w-full py-8 rounded-2xl text-xl font-bold flex flex-col items-center justify-center gap-3 mint-btn shadow-2xl">
+                        <span class="text-5xl">📝</span>
+                        <span>오늘의 몸 상태 기록하기</span>
+                    </button>
+
+                    <div class="dark-card p-6" id="todaySummary">
+                        <h3 class="font-bold mb-4 flex items-center gap-2">
+                            <span>📌</span>
+                            <span>오늘 컨디션 요약</span>
+                        </h3>
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div class="flex items-center gap-2">
+                                <span>💤</span>
+                                <span id="sleepSummary">수면: 기록 필요</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span>🏃</span>
+                                <span id="exerciseSummary">운동: 기록 필요</span>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-3" id="compareYesterday">
+                            기록을 시작하면 분석해드려요
+                        </p>
+                    </div>
+
+                    <div class="dark-card p-6">
+                        <h3 class="font-bold mb-4">✨ 오늘의 추천 (RULE 기반)</h3>
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between p-4 bg-gradient-to-r from-green-900/30 to-green-800/20 rounded-xl border-2 border-green-700/30">
+                                <div class="flex items-center gap-3 flex-1">
+                                    <span class="text-3xl">🥗</span>
+                                    <div>
+                                        <p class="font-semibold">추천 식품</p>
+                                        <p class="text-xs text-gray-400" id="foodRec">기록 후 확인</p>
+                                    </div>
+                                </div>
+                                <button onclick="openShopping('food')" class="mint-btn px-4 py-2 rounded-lg text-sm">보기</button>
+                            </div>
+
+                            <div class="flex items-center justify-between p-4 bg-gradient-to-r from-purple-900/30 to-purple-800/20 rounded-xl border-2 border-purple-700/30">
+                                <div class="flex items-center gap-3 flex-1">
+                                    <span class="text-3xl">💊</span>
+                                    <div>
+                                        <p class="font-semibold">추천 영양제</p>
+                                        <p class="text-xs text-gray-400" id="suppRec">기록 후 확인</p>
+                                    </div>
+                                </div>
+                                <button onclick="openShopping('supplement')" class="mint-btn px-4 py-2 rounded-lg text-sm">검색</button>
+                            </div>
+
+                            <div class="flex items-center justify-between p-4 bg-gradient-to-r from-orange-900/30 to-orange-800/20 rounded-xl border-2 border-orange-700/30">
+                                <div class="flex items-center gap-3 flex-1">
+                                    <span class="text-3xl">🏃</span>
+                                    <div>
+                                        <p class="font-semibold">추천 운동</p>
+                                        <p class="text-xs text-gray-400" id="exerRec">기록 후 확인</p>
+                                    </div>
+                                </div>
+                                <button onclick="startExercise()" class="mint-btn px-4 py-2 rounded-lg text-sm">시작</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dark-card p-6">
+                        <h3 class="font-bold mb-4">✅ 오늘의 미션</h3>
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between p-3 bg-black/30 rounded-xl">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl">💧</span>
+                                    <span>물 1.5L 마시기</span>
+                                </div>
+                                <button onclick="completeChallenge(1)" class="px-4 py-2 bg-gray-700 rounded-lg text-sm">완료</button>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-black/30 rounded-xl">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl">☕</span>
+                                    <span>카페인 2잔 이하</span>
+                                </div>
+                                <button onclick="completeChallenge(2)" class="px-4 py-2 bg-gray-700 rounded-lg text-sm">완료</button>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-black/30 rounded-xl">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl">🚶</span>
+                                    <span>20분 걷기</span>
+                                </div>
+                                <button onclick="completeChallenge(3)" class="px-4 py-2 bg-gray-700 rounded-lg text-sm">완료</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fixed bottom-0 left-0 right-0 bottom-nav" style="max-width: 480px; margin: 0 auto;">
+                    <div class="flex justify-around items-center py-3">
+                        <button onclick="showPage('homePage')" class="flex flex-col items-center" style="color: #00d9c0;">
+                            <span class="text-2xl mb-1">🏠</span>
+                            <span class="text-xs font-semibold">홈</span>
+                        </button>
+                        <button onclick="showPage('recordPage')" class="flex flex-col items-center text-gray-500">
+                            <span class="text-2xl mb-1">➕</span>
+                            <span class="text-xs">기록</span>
+                        </button>
+                        <button onclick="showPage('challengeListPage')" class="flex flex-col items-center text-gray-500">
+                            <span class="text-2xl mb-1">🎯</span>
+                            <span class="text-xs">챌린지</span>
+                        </button>
+                        <button onclick="showPage('communityPage')" class="flex flex-col items-center text-gray-500">
+                            <span class="text-2xl mb-1">👥</span>
+                            <span class="text-xs">커뮤니티</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 기록 페이지 -->
+        <div id="recordPage" class="page">
+            <div class="min-h-screen bg-black pb-24">
+                <div class="p-4 flex items-center gap-4 border-b border-gray-800">
+                    <button onclick="showPage('homePage')" class="text-2xl">←</button>
+                    <h1 class="text-xl font-bold">오늘의 몸 상태 기록</h1>
+                </div>
+
+                <div class="p-6 space-y-4">
+                    <div class="dark-card p-6">
+                        <label class="block font-bold mb-3">💤 수면 시간</label>
+                        <input type="number" id="sleepInput" class="w-full p-4 rounded-xl bg-gray-800 border-0 text-white" placeholder="7" min="0" max="12">
+                    </div>
+
+                    <div class="dark-card p-6">
+                        <label class="block font-bold mb-3">🏃 운동 여부</label>
+                        <select id="exerciseInput" class="w-full p-4 rounded-xl bg-gray-800 border-0 text-white">
+                            <option value="none">안 함</option>
+                            <option value="walk">걷기</option>
+                            <option value="run">달리기</option>
+                            <option value="gym">헬스</option>
+                            <option value="yoga">요가</option>
+                            <option value="other">기타</option>
+                        </select>
+                    </div>
+
+                    <div class="dark-card p-6">
+                        <label class="block font-bold mb-3">💊 복용 영양제/약</label>
+                        <textarea id="suppInput" class="w-full p-4 rounded-xl bg-gray-800 border-0 text-white resize-none" rows="2" placeholder="예: 비타민D, 오메가3"></textarea>
+                    </div>
+
+                    <div class="dark-card p-6">
+                        <label class="block font-bold mb-4">🏥 불편한 증상 선택</label>
+                        <div class="grid grid-cols-2 gap-2" id="categorySelector"></div>
+                        <div id="selectedSymptomsList" class="mt-4 flex flex-wrap gap-2"></div>
+                    </div>
+
+                    <div class="dark-card p-6">
+                        <label class="block font-bold mb-3">📝 메모</label>
+                        <textarea id="noteInput" class="w-full p-4 rounded-xl bg-gray-800 border-0 text-white resize-none" rows="3" placeholder="오늘 특별한 일이 있었나요?"></textarea>
+                    </div>
+
+                    <button onclick="saveAndMatch()" class="w-full mint-btn py-5 rounded-xl text-lg font-bold shadow-xl">
+                        💾 저장하고 추천받기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 챌린지 페이지 -->
+        <div id="challengeListPage" class="page">
+            <div class="min-h-screen bg-black pb-24">
+                <div class="p-4 flex items-center gap-4 border-b border-gray-800">
+                    <button onclick="showPage('homePage')" class="text-2xl">←</button>
+                    <h1 class="text-xl font-bold">챌린지</h1>
+                </div>
+
+                <div class="p-6 space-y-4">
+                    <div class="dark-card p-6">
+                        <h3 class="font-bold mb-4">🔥 이번주 챌린지</h3>
+                        <div class="space-y-3">
+                            <div class="p-4 bg-black/30 rounded-xl">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-semibold">물 2L 마시기</span>
+                                    <span class="text-xs" style="color: #00d9c0;">3/7일</span>
+                                </div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 43%"></div>
+                                </div>
+                            </div>
+                            <div class="p-4 bg-black/30 rounded-xl">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-semibold">10,000 걸음 걷기</span>
+                                    <span class="text-xs" style="color: #00d9c0;">2/7일</span>
+                                </div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 29%"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="w-full mint-btn py-3 rounded-xl mt-4">✅ 참여하기</button>
+                    </div>
+                </div>
+
+                <div class="fixed bottom-0 left-0 right-0 bottom-nav" style="max-width: 480px; margin: 0 auto;">
+                    <div class="flex justify-around items-center py-3">
+                        <button onclick="showPage('homePage')" class="flex flex-col items-center text-gray-500">
+                            <span class="text-2xl mb-1">🏠</span>
+                            <span class="text-xs">홈</span>
+                        </button>
+                        <button onclick="showPage('recordPage')" class="flex flex-col items-center text-gray-500">
+                            <span class="text-2xl mb-1">➕</span>
+                            <span class="text-xs">기록</span>
+                        </button>
+                        <button onclick="showPage('challengeListPage')" class="flex flex-col items-center" style="color: #00d9c0;">
+                            <span class="text-2xl mb-1">🎯</span>
+                            <span class="text-xs font-semibold">챌린지</span>
+                        </button>
+                        <button onclick="showPage('communityPage')" class="flex flex-col items-center text-gray-500">
+                            <span class="text-2xl mb-1">👥</span>
+                            <span class="text-xs">커뮤니티</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 커뮤니티 페이지 -->
+        <div id="communityPage" class="page">
+            <div class="min-h-screen bg-black pb-24">
+                <div class="p-6 pb-0 flex items-center justify-between">
+                    <h1 class="text-2xl font-bold" style="color: #00d9c0;">커뮤니티</h1>
+                    <button onclick="alert('글쓰기 기능 준비 중!')" class="mint-btn px-4 py-2 rounded-lg text-sm">✍️ 글쓰기</button>
+                </div>
+
+                <div class="flex border-b border-gray-800 px-6 mt-4">
+                    <button class="tab-btn active" onclick="switchTab('popular')">인기</button>
+                    <button class="tab-btn" onclick="switchTab('challenge')">챌린지</button>
+                    <button class="tab-btn" onclick="switchTab('following')">팔로잉</button>
+                </div>
+
+                <div id="popularTab" class="p-6 space-y-4">
+                    <div class="dark-card p-6">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-full"></div>
+                            <div>
+                                <p class="font-semibold">건강왕</p>
+                                <p class="text-xs text-gray-400">2시간 전</p>
+                            </div>
+                        </div>
+                        <p class="mb-4">변비 개선 30일 챌린지 완료! 🎉</p>
+                        <div class="flex items-center gap-6 text-gray-400 text-sm">
+                            <button>❤️ 127</button>
+                            <button>💬 34</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="challengeTab" class="p-6 space-y-4 hidden">
+                    <div class="dark-card p-6">
+                        <h3 class="font-bold mb-4">🔥 인기 챌린지</h3>
+                        <p class="text-gray-300 mb-4">카페인 줄이기 7일 챌린지</p>
+                        <button class="w-full mint-btn py-3 rounded-xl">도전하기</button>
+                    </div>
+                </div>
+
+                <div id="followingTab" class="p-6 space-y-4 hidden">
+                    <div class="dark-card p-6">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 bg-gradient-to-br from-green-400 to-blue-500 rounded-full"></div>
+                            <div>
+                                <p class="font-semibold">친정언니</p>
+                                <p class="text-xs text-gray-400">1시간 전</p>
+                            </div>
+                        </div>
+                        <p>오늘도 요가 30분 완료!</p>
+                    </div>
+                </div>
+
+                <div class="fixed bottom-0 left-0 right-0 bottom-nav" style="max-width: 480px; margin: 0 auto;">
+                    <div class="flex justify-around items-center py-3">
+                        <button onclick="showPage('homePage')" class="flex flex-col items-center text-gray-500">
+                            <span class="text-2xl mb-1">🏠</span>
+                            <span class="text-xs">홈</span>
+                        </button>
+                        <button onclick="showPage('recordPage')" class="flex flex-col items-center text-gray-500">
+                            <span class="text-2xl mb-1">➕</span>
+                            <span class="text-xs">기록</span>
+                        </button>
+                        <button onclick="showPage('challengeListPage')" class="flex flex-col items-center text-gray-500">
+                            <span class="text-2xl mb-1">🎯</span>
+                            <span class="text-xs">챌린지</span>
+                        </button>
+                        <button onclick="showPage('communityPage')" class="flex flex-col items-center" style="color: #00d9c0;">
+                            <span class="text-2xl mb-1">👥</span>
+                            <span class="text-xs font-semibold">커뮤니티</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 증상 선택 모달 -->
+    <div id="symptomModal" class="fixed inset-0 bg-black/80 items-center justify-center z-50" style="display: none;">
+        <div class="bg-gray-900 rounded-2xl p-6 m-4 max-w-md w-full max-h-[80vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold" id="modalCategoryTitle"></h3>
+                <button onclick="closeSymptomModal()" class="text-3xl text-gray-400">×</button>
+            </div>
+            <div id="modalSymptomList" class="space-y-2"></div>
+            <button onclick="closeSymptomModal()" class="w-full mint-btn py-3 rounded-xl mt-4">
+                완료
+            </button>
+        </div>
+    </div>
+
+    <script>
+// ============================================
+// RULE 데이터베이스 (엑셀 기반)
+// ============================================
+const HEALTH_RULES_DB = [
+  { category: "체중/대사", condition: "체지방 증가", supplements: ["오메가3", "녹차카테킨", "CLA"], foods: ["연어", "아보카도"], habits: ["취침 1시간 전 스마트폰 OFF"], exercise: "걷기 30분" },
+  { category: "체중/대사", condition: "비만", supplements: ["가르시니아", "단백질"], foods: ["연어", "아보카도"], habits: ["규칙적인 식사"], exercise: "걷기 30분" },
+  { category: "소화기", condition: "변비", supplements: ["프리바이오틱스", "프로바이오틱스"], foods: ["귀리", "요거트", "블루베리"], habits: ["식후 20분 산책하기"], exercise: "가벼운 스트레칭 15분" },
+  { category: "소화기", condition: "소화불량", supplements: ["소화효소", "프로바이오틱스"], foods: ["양배추", "생강차", "바나나"], habits: ["천천히 먹기", "식사 후 눕지 않기"], exercise: "식후 가벼운 산책 10분" },
+  { category: "신경/정신", condition: "스트레스", supplements: ["마그네슘", "비타민B복합체", "테아닌"], foods: ["바나나", "아몬드", "시금치"], habits: ["명상 10분", "충분한 수면"], exercise: "요가 20분" },
+  { category: "신경/정신", condition: "불안", supplements: ["마그네슘", "테아닌", "GABA"], foods: ["녹차", "다크초콜릿", "블루베리"], habits: ["명상", "규칙적인 생활"], exercise: "요가 30분" },
+  { category: "수면", condition: "불면증", supplements: ["멜라토닌", "마그네슘", "테아닌"], foods: ["바나나", "우유", "호두", "체리"], habits: ["취침 1시간 전 스마트폰 금지", "규칙적인 취침 시간"], exercise: "저녁 요가 30분" },
+  { category: "피로", condition: "만성피로", supplements: ["비타민B복합체", "코엔자임Q10", "철분"], foods: ["시금치", "견과류", "연어"], habits: ["충분한 수면", "규칙적인 식사"], exercise: "가벼운 스트레칭 20분" },
+  { category: "피로", condition: "집중력 저하", supplements: ["오메가3", "은행잎추출물", "비타민B"], foods: ["블루베리", "호두", "아보카도"], habits: ["충분한 수분 섭취", "규칙적인 휴식"], exercise: "걷기 20분" },
+  { category: "통증", condition: "두통", supplements: ["마그네슘", "비타민B2", "코엔자임Q10"], foods: ["물 충분히", "시금치", "아몬드"], habits: ["충분한 수분 섭취", "규칙적인 식사", "스트레스 관리"], exercise: "목/어깨 스트레칭 10분" },
+  { category: "통증", condition: "근육통", supplements: ["마그네슘", "BCAA", "오메가3"], foods: ["계란", "닭가슴살", "바나나"], habits: ["충분한 스트레칭", "회복 시간 확보"], exercise: "가벼운 스트레칭" },
+  { category: "면역", condition: "감기 잦음", supplements: ["비타민C", "비타민D", "아연"], foods: ["오렌지", "키위", "파프리카"], habits: ["충분한 수면", "손 씻기"], exercise: "가벼운 운동 20분" },
+  { category: "여성건강", condition: "생리전증후군", supplements: ["마그네슘", "비타민B6", "칼슘"], foods: ["바나나", "아보카도", "견과류"], habits: ["충분한 휴식", "스트레스 관리"], exercise: "요가 30분" },
+  { category: "여성건강", condition: "생리통", supplements: ["마그네슘", "오메가3", "달맞이꽃종자유"], foods: ["연어", "시금치", "견과류"], habits: ["따뜻한 물 마시기", "충분한 휴식"], exercise: "가벼운 스트레칭" },
+  { category: "피부", condition: "피부 건조", supplements: ["오메가3", "비타민E", "히알루론산"], foods: ["아보카도", "견과류", "연어"], habits: ["충분한 수분 섭취", "보습제 사용"], exercise: "걷기 20분" },
+  { category: "피부", condition: "여드름", supplements: ["아연", "프로바이오틱스", "비타민A"], foods: ["녹황색 채소", "요거트", "견과류"], habits: ["충분한 수면", "스트레스 관리"], exercise: "가벼운 운동 30분" },
+  { category: "호흡기", condition: "기침", supplements: ["비타민C", "아연", "프로폴리스"], foods: ["꿀", "생강차", "배"], habits: ["충분한 수분 섭취", "휴식"], exercise: "가벼운 산책" },
+  { category: "순환기", condition: "혈액순환 불량", supplements: ["오메가3", "은행잎추출물", "코엔자임Q10"], foods: ["연어", "호두", "블루베리"], habits: ["규칙적인 운동", "금연"], exercise: "걷기 30분" },
+  { category: "관절", condition: "관절염", supplements: ["글루코사민", "콘드로이친", "오메가3"], foods: ["연어", "아보카도", "견과류"], habits: ["체중 관리", "규칙적인 스트레칭"], exercise: "수영 또는 수중 운동" },
+  { category: "골격", condition: "골다공증", supplements: ["칼슘", "비타민D", "비타민K"], foods: ["우유", "치즈", "멸치"], habits: ["햇볕 쬐기", "금연"], exercise: "걷기 30분" }
+];
+
+const SYMPTOM_LIST = [
+  { category: "체중/대사", symptoms: ["체지방 증가", "비만"] },
+  { category: "소화기", symptoms: ["변비", "소화불량"] },
+  { category: "신경/정신", symptoms: ["스트레스", "불안"] },
+  { category: "수면", symptoms: ["불면증"] },
+  { category: "피로", symptoms: ["만성피로", "집중력 저하"] },
+  { category: "통증", symptoms: ["두통", "근육통"] },
+  { category: "면역", symptoms: ["감기 잦음"] },
+  { category: "여성건강", symptoms: ["생리전증후군", "생리통"] },
+  { category: "피부", symptoms: ["피부 건조", "여드름"] },
+  { category: "호흡기", symptoms: ["기침"] },
+  { category: "순환기", symptoms: ["혈액순환 불량"] },
+  { category: "관절", symptoms: ["관절염"] },
+  { category: "골격", symptoms: ["골다공증"] }
+];
+
+// ============================================
+// RULE 매칭 함수
+// ============================================
+function matchHealthRules(userData) {
+  const { conditions, sleep } = userData;
+  let recommendations = { supplements: new Set(), foods: new Set(), habits: new Set(), exercises: new Set() };
+  
+  if (conditions && conditions.length > 0) {
+    conditions.forEach(condition => {
+      const rules = HEALTH_RULES_DB.filter(rule => rule.condition === condition);
+      rules.forEach(rule => {
+        rule.supplements.forEach(s => recommendations.supplements.add(s));
+        rule.foods.forEach(f => recommendations.foods.add(f));
+        rule.habits.forEach(h => recommendations.habits.add(h));
+        recommendations.exercises.add(rule.exercise);
+      });
+    });
+  }
+  
+  if (sleep < 6) {
+    recommendations.supplements.add('멜라토닌');
+    recommendations.supplements.add('마그네슘');
+    recommendations.habits.add('취침 1시간 전 스마트폰 금지');
+  }
+  
+  if (recommendations.supplements.size === 0) {
+    recommendations.supplements.add('종합비타민');
+    recommendations.supplements.add('오메가3');
+    recommendations.foods.add('채소');
+    recommendations.foods.add('과일');
+    recommendations.habits.add('균형잡힌 식사');
+    recommendations.exercises.add('하루 30분 걷기');
+  }
+  
+  return {
+    supplements: Array.from(recommendations.supplements),
+    foods: Array.from(recommendations.foods),
+    habits: Array.from(recommendations.habits),
+    exercises: Array.from(recommendations.exercises)
+  };
+}
+
+// ============================================
+// 앱 로직
+// ============================================
+let userName = '철수';
+let selectedSymptoms = [];
+let currentRecommendations = null;
+
+setTimeout(() => showPage('loginPage'), 2000);
+
+function showPage(pageId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(pageId)?.classList.add('active');
+  window.scrollTo(0, 0);
+  if (pageId === 'homePage') loadHomeData();
+  else if (pageId === 'recordPage') initRecordPage();
+}
+
+function login(provider) {
+  userName = '철수';
+  document.getElementById('welcomeMsg').textContent = `안녕하세요, ${userName}님! 👋`;
+  showPage('homePage');
+}
+
+function loadHomeData() {
+  const saved = localStorage.getItem('lastRecommendations');
+  if (saved) {
+    currentRecommendations = JSON.parse(saved);
+    displayRecommendations(currentRecommendations);
+  }
+  const lastRecord = localStorage.getItem('lastRecord');
+  if (lastRecord) {
+    const record = JSON.parse(lastRecord);
+    document.getElementById('sleepSummary').textContent = `수면: ${record.sleep}시간`;
+    document.getElementById('exerciseSummary').textContent = `운동: ${record.exercise === 'none' ? '안 함' : record.exercise}`;
+    document.getElementById('compareYesterday').textContent = '오늘도 건강하게 기록해보세요! 💪';
+  }
+}
+
+function displayRecommendations(rec) {
+  if (!rec) return;
+  if (rec.foods && rec.foods.length > 0) {
+    document.getElementById('foodRec').textContent = rec.foods.slice(0, 3).join(', ');
+  }
+  if (rec.supplements && rec.supplements.length > 0) {
+    document.getElementById('suppRec').textContent = rec.supplements.slice(0, 3).join(', ');
+  }
+  if (rec.exercises && rec.exercises.length > 0) {
+    document.getElementById('exerRec').textContent = rec.exercises[0];
+  }
+}
+
+function initRecordPage() {
+  const container = document.getElementById('categorySelector');
+  container.innerHTML = '';
+  
+  // 카테고리 버튼만 표시
+  SYMPTOM_LIST.forEach(group => {
+    const btn = document.createElement('button');
+    btn.className = 'px-4 py-3 bg-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-600 transition';
+    btn.textContent = group.category;
+    btn.onclick = () => openSymptomModal(group);
+    container.appendChild(btn);
+  });
+  
+  // 선택된 증상 표시 업데이트
+  updateSelectedSymptomsList();
+}
+
+function openSymptomModal(group) {
+  const modal = document.getElementById('symptomModal');
+  const title = document.getElementById('modalCategoryTitle');
+  const list = document.getElementById('modalSymptomList');
+  
+  title.textContent = group.category;
+  list.innerHTML = '';
+  
+  group.symptoms.forEach(symptom => {
+    const item = document.createElement('div');
+    item.className = 'flex items-center justify-between p-3 bg-gray-800 rounded-lg';
+    
+    const label = document.createElement('span');
+    label.textContent = symptom;
+    
+    const checkbox = document.createElement('button');
+    checkbox.className = 'w-6 h-6 rounded border-2 flex items-center justify-center transition';
+    
+    if (selectedSymptoms.includes(symptom)) {
+      checkbox.classList.add('bg-mint', 'border-mint');
+      checkbox.style.background = '#00d9c0';
+      checkbox.style.borderColor = '#00d9c0';
+      checkbox.innerHTML = '✓';
+    } else {
+      checkbox.classList.add('border-gray-600');
+    }
+    
+    item.onclick = () => {
+      toggleSymptomFromModal(symptom, checkbox);
+    };
+    
+    item.appendChild(label);
+    item.appendChild(checkbox);
+    list.appendChild(item);
+  });
+  
+  modal.style.display = 'flex';
+}
+
+function closeSymptomModal() {
+  document.getElementById('symptomModal').style.display = 'none';
+  updateSelectedSymptomsList();
+}
+
+function toggleSymptomFromModal(symptom, checkbox) {
+  const index = selectedSymptoms.indexOf(symptom);
+  
+  if (index > -1) {
+    selectedSymptoms.splice(index, 1);
+    checkbox.classList.remove('bg-mint', 'border-mint');
+    checkbox.classList.add('border-gray-600');
+    checkbox.style.background = '';
+    checkbox.style.borderColor = '';
+    checkbox.innerHTML = '';
+  } else {
+    selectedSymptoms.push(symptom);
+    checkbox.classList.remove('border-gray-600');
+    checkbox.classList.add('bg-mint', 'border-mint');
+    checkbox.style.background = '#00d9c0';
+    checkbox.style.borderColor = '#00d9c0';
+    checkbox.innerHTML = '✓';
+  }
+}
+
+function updateSelectedSymptomsList() {
+  const container = document.getElementById('selectedSymptomsList');
+  container.innerHTML = '';
+  
+  if (selectedSymptoms.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'text-xs text-gray-500';
+    empty.textContent = '선택된 증상이 없습니다';
+    container.appendChild(empty);
+    return;
+  }
+  
+  selectedSymptoms.forEach(symptom => {
+    const tag = document.createElement('div');
+    tag.className = 'px-3 py-1 bg-gray-700 rounded-full text-sm flex items-center gap-2';
+    
+    const text = document.createElement('span');
+    text.textContent = symptom;
+    
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = '×';
+    removeBtn.className = 'text-lg font-bold';
+    removeBtn.onclick = () => {
+      const index = selectedSymptoms.indexOf(symptom);
+      if (index > -1) {
+        selectedSymptoms.splice(index, 1);
+        updateSelectedSymptomsList();
+      }
+    };
+    
+    tag.appendChild(text);
+    tag.appendChild(removeBtn);
+    container.appendChild(tag);
+  });
+}
+
+function saveAndMatch() {
+  const userData = {
+    sleep: parseInt(document.getElementById('sleepInput').value) || 7,
+    exercise: document.getElementById('exerciseInput').value,
+    supplements: document.getElementById('suppInput').value,
+    conditions: selectedSymptoms,
+    note: document.getElementById('noteInput').value,
+    date: new Date().toISOString()
+  };
+  
+  currentRecommendations = matchHealthRules(userData);
+  localStorage.setItem('lastRecord', JSON.stringify(userData));
+  localStorage.setItem('lastRecommendations', JSON.stringify(currentRecommendations));
+  
+  alert('✅ 기록 완료! 맞춤 추천을 확인하세요.');
+  showPage('homePage');
+}
+
+function openShopping(type) {
+  if (!currentRecommendations) {
+    alert('먼저 오늘의 기록을 완료해주세요!');
+    showPage('recordPage');
+    return;
+  }
+  let keyword = '';
+  if (type === 'food' && currentRecommendations.foods.length > 0) {
+    keyword = currentRecommendations.foods[0];
+  } else if (type === 'supplement' && currentRecommendations.supplements.length > 0) {
+    keyword = currentRecommendations.supplements[0];
+  }
+  if (keyword) {
+    window.open(`https://search.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}`, '_blank');
+  }
+}
+
+function startExercise() {
+  if (!currentRecommendations || !currentRecommendations.exercises.length) {
+    alert('먼저 오늘의 기록을 완료해주세요!');
+    showPage('recordPage');
+    return;
+  }
+  alert(`🏃 운동 시작!\n\n추천: ${currentRecommendations.exercises[0]}`);
+}
+
+function completeChallenge(id) {
+  const btn = event.target;
+  btn.textContent = '✅ 완료';
+  btn.classList.add('mint-btn');
+  btn.classList.remove('bg-gray-700');
+  btn.disabled = true;
+  alert('🎉 챌린지 완료! 잘하고 있어요!');
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('popularTab').classList.add('hidden');
+  document.getElementById('challengeTab').classList.add('hidden');
+  document.getElementById('followingTab').classList.add('hidden');
+  if (tab === 'popular') document.getElementById('popularTab').classList.remove('hidden');
+  else if (tab === 'challenge') document.getElementById('challengeTab').classList.remove('hidden');
+  else if (tab === 'following') document.getElementById('followingTab').classList.remove('hidden');
+}
+
+console.log('🎯 내몸일기 - RULE 기반 (AI 비용 $0)');
+console.log('📊 RULE 데이터:', HEALTH_RULES_DB.length + '개');
+    </script>
+</body>
+</html>
